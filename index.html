@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reading Comprehension Tester</title>
+  <style>
+    @font-face { font-family: 'Cumberland'; src: url('https://william-medina-martin.b-cdn.net/Cumberland%20Bold.ttf'); }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #d4d4d4; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+    .container { max-width: 700px; width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15); padding: 30px; }
+    h1 { text-align: center; margin-bottom: 25px; font-size: 1.8em; color: #222; }
+    .settings label { display: flex; justify-content: space-between; align-items: center; margin: 12px 0; font-size: .95em; }
+    .settings input { width: 180px; padding: 8px 12px; border: 2px solid #888; border-radius: 4px; font-family: Arial, sans-serif; font-size: .9em; }
+    button { width: 100%; padding: 14px; margin-top: 20px; background: #333; color: #fff; border: none; border-radius: 6px; font-family: Arial, sans-serif; font-size: 1.1em; cursor: pointer; transition: .2s; }
+    button:hover { background: #555; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    .script-display { padding: 25px; background: #f9f9f9; border: 2px solid #aaa; border-radius: 6px; line-height: 1.1; white-space: pre-wrap; font-size: .95em; font-family: 'Cumberland', monospace; }
+    .script-display.size-small { font-size: .8em; }
+    .script-display.size-medium { font-size: .95em; }
+    .script-display.size-big { font-size: 1.15em; }
+    .timer-bar { height: 6px; background: #333; margin-top: 15px; border-radius: 3px; transition: width linear; }
+    .countdown { text-align: center; margin-top: 15px; font-size: 1.3em; font-weight: bold; color: #333; }
+    .font-size-selector { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px; }
+    .font-size-btn { padding: 8px 16px; background: #eee; border: 2px solid #888; border-radius: 4px; cursor: pointer; font-family: Arial, sans-serif; font-size: .9em; transition: .15s; }
+    .font-size-btn:hover { background: #ddd; }
+    .font-size-btn.active { background: #333; color: #fff; border-color: #333; }
+    .question-container h3 { margin-bottom: 18px; font-size: 1.1em; line-height: 1.5; }
+    .options { display: flex; flex-direction: column; gap: 10px; }
+    .option { padding: 14px 18px; background: #eee; border: 2px solid transparent; border-radius: 6px; cursor: pointer; transition: .15s; }
+    .option:hover { background: #ddd; border-color: #888; }
+    .option.correct { background: #4a4; color: #fff; border-color: #383; }
+    .option.wrong { background: #a44; color: #fff; border-color: #833; }
+    .score { text-align: center; font-size: 1.4em; padding: 40px 0; }
+    .score span { font-size: 2em; display: block; margin: 15px 0; }
+    .info { text-align: center; color: #666; margin: 15px 0; font-size: .9em; }
+    .highlight { padding: 2px 5px; border-radius: 3px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📖 Reading Comprehension</h1>
+    <div id="app"></div>
+  </div>
+
+<script>
+const $ = (s, p = document) => p.querySelector(s);
+const $$ = (s, p = document) => [...p.querySelectorAll(s)];
+
+class Store {
+  static get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }
+  static set(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+}
+
+class Config {
+  constructor() { Object.assign(this, Store.get('rcConfig', { displayTime: 8000, numQuestions: 5, timeDecrement: 300, apiKey: '' })); }
+  save() { Store.set('rcConfig', this); return this; }
+}
+
+class API {
+  static URL = 'https://openrouter.ai/api/v1/chat/completions';
+  static MODEL = 'google/gemini-2.0-flash-001';
+  
+  static PROMPT = n => `Generate a confusing on-call/message-taker medical instruction document.
+
+STYLE REQUIREMENTS:
+
+MOST IMPORTANT: DON'T MAKE THE INSTRUCTIONS LONGER THAN 40-50 WORDS
+
+- Aggressive abbreviation (Pt=patient, o/c=on call, ers=emergencies, rx=prescription, msg=message, tk=take, N/R=no response, inpts=inpatients, ofc=office)
+- Telegraphic fragments: omit articles, verbs, connectors
+- Jargon without glossing (terms undefined)
+- Run-on conditionals compressed
+- Non-sequential logic (exceptions before rules)
+- Include timestamps, zone references, doctor abbreviations
+- Mix ALL CAPS warnings with regular text
+- Use bullet points inconsistently
+- Include contradictions and ambiguous referents
+
+**Lexical Level:**
+
+- Aggressive abbreviation (every multi-syllable word compressed)
+- Inconsistent abbreviation (same concept, multiple forms)
+- Jargon without glossing
+- Typos preserved across versions
+
+**Syntactic Level:**
+
+- Telegraphic fragments (articles, verbs omitted)
+- Run-on conditionals (multiple IF-THEN compressed)
+- Ambiguous referents ("all others")
+- Missing logical connectives
+
+**Structural Level:**
+
+- Flat hierarchy (no nesting of subordinate rules)
+- Non-sequential logic (exceptions before rules)
+- Visual encoding of semantics (color = actionable)
+- Metadata contamination (timestamps mixed with instructions)
+
+**Cognitive Level:**
+
+- Assumes tacit knowledge (undefined terms)
+- Requires holding 3-5 branches in working memory
+- No decision aids (checklists, flowcharts)
+- High error surface area
+
+### WHY It's Confusing:
+
+The instructions **maximize entropy** across all dimensions simultaneously:
+
+- **Lexical:** Which abbreviation means what?
+- **Syntactic:** What's the grammatical structure?
+- **Semantic:** What does this mean?
+- **Pragmatic:** What should I DO?
+
+Reader must resolve ambiguity at every level before acting, under time pressure, with patient safety at stake.
+
+### The Guideline Pattern (What Makes It "This Way"):
+
+**"Minimal-Effort Encoding, Maximum-Effort Decoding"**
+
+Each author optimizes their local task (quickly noting procedure) at expense of global system (all readers × all time × all calls). Classic tragedy of the commons in documentation.
+
+
+
+
+EXAMPLE STYLE:
+"On-Call Instructions for 8866 as of 01-14-2026 15:31 KAH
+Before sending msgs to Drs: Check DRS INFO CARD
+**OUTPT PHARM/CIFS; ALWAYS CCX O/C DR
+Only Page for ER/RX's if within 72 hours att Discharge
+Per Dr Bharucha if Pt not listed on census send to Dr on call for ER"
+
+"Call **handling**
+
+Hospital calls take message, reach dr on call for the hospital admits.
+Calls from call from the emergency room determine others if new admit. New admits go to dr on call for admits. All others go to calls on call for flrs.
+•Census call instructions
+•Pharmacy instructions
+•Patient calls instructions
+•Hospital abbreviations"
+
+
+"Message taker instructions
+
+pt ers - Page o/c for all pt ers, er rx refill only.     Non ers tk msg for ofc
+Labs Consults - Page on call 24/7/stat/ critical labs 24/7
+ - Page on call 24/7
+Canceling ers - Tricia appts TAKE A MESSAGE DO NOT DENY CALLER FROM TAKING MGS
+Ocfc
+Hosp Page for all facilities"
+
+"Take message on all calls
+NO POOLS
+
+During office hours patch caller to requested •contact/division
+5p-10p/Weekends Estimates PATCH to Jessica/contact. SMS all other calls to department and email
+After 10p email all calls"
+
+RETURN VALID JSON ONLY (no markdown, no backticks):
+{
+  "script": "HTML string with <span class='highlight' style='background:COLOR'>text</span> for important sections. Use colors: #ffd700 for headers, #ff9999 for warnings, #99ff99 for procedures, #99ccff for exceptions",
+  "questions": [
+    {"q": "Tricky question requiring careful reading", "opts": ["plausible wrong", "correct answer", "plausible wrong", "plausible wrong"], "ans": 1}
+  ]
+}
+
+Generate EXACTLY ${n} questions. Make options VERY similar and tricky - they should require precise understanding of the confusing text. Questions should test: abbreviation meanings, conditional logic, exceptions, procedures, and contradictions within the text.`;
+
+  static async generate(apiKey, numQuestions) {
+    const res = await fetch(this.URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.MODEL,
+        messages: [{ role: 'user', content: this.PROMPT(numQuestions) }],
+        temperature: 0.9
+      })
+    });
+    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+    const data = await res.json();
+    const content = data.choices[0].message.content.replace(/```json\n?|\n?```/g, '').trim();
+    return JSON.parse(content);
+  }
+}
+
+class App {
+  constructor(container) {
+    this.el = container;
+    this.config = new Config();
+    this.state = { phase: 'settings', data: null, qIndex: 0, score: 0, currentDisplayTime: 0 };
+    this.render();
+  }
+
+  render() {
+    const { phase } = this.state;
+    const views = { settings: this.settingsView, reading: this.readingView, question: this.questionView, results: this.resultsView };
+    this.el.innerHTML = views[phase].call(this);
+    this.bind();
+  }
+
+  settingsView() {
+    const { displayTime, numQuestions, apiKey } = this.config;
+    return `
+      <div class="settings">
+        <label>API Key <input type="password" id="apiKey" value="${apiKey}" placeholder="sk-or-..."></label>
+        <label>Display Time (ms) <input type="number" id="displayTime" value="${displayTime}" min="1000" step="500"></label>
+        <label>Questions <input type="number" id="numQuestions" value="${numQuestions}" min="1" max="20"></label>
+      </div>
+      <p class="info">Time decreases by ${this.config.timeDecrement}ms per question</p>
+      <button id="start">▶ Start Test</button>`;
+  }
+
+  readingView() {
+    const fontSize = this.state.fontSize || 'medium';
+    return `
+      <p class="info">Memorize these instructions!</p>
+      <div class="font-size-selector">
+        <button class="font-size-btn ${fontSize === 'small' ? 'active' : ''}" data-size="small">Small</button>
+        <button class="font-size-btn ${fontSize === 'medium' ? 'active' : ''}" data-size="medium">Medium</button>
+        <button class="font-size-btn ${fontSize === 'big' ? 'active' : ''}" data-size="big">Big</button>
+      </div>
+      <div class="script-display size-${fontSize}">${this.state.data.script}</div>
+      <div class="timer-bar" id="timer"></div>
+      <div class="countdown" id="countdown"></div>`;
+  }
+
+  questionView() {
+    const q = this.state.data.questions[this.state.qIndex];
+    return `
+      <div class="question-container">
+        <p class="info">Question ${this.state.qIndex + 1} of ${this.state.data.questions.length} | Time: ${this.state.currentDisplayTime}ms</p>
+        <h3>${q.q}</h3>
+        <div class="options">${q.opts.map((o, i) => `<div class="option" data-idx="${i}">${o}</div>`).join('')}</div>
+      </div>`;
+  }
+
+  resultsView() {
+    const total = this.state.data.questions.length;
+    const pct = Math.round(this.state.score / total * 100);
+    return `
+      <div class="score">
+        Final Score<span>${this.state.score} / ${total}</span>${pct}%
+      </div>
+      <button id="restart">↻ Try Again</button>`;
+  }
+
+  bind() {
+    const { phase } = this.state;
+    if (phase === 'settings') {
+      $('#start', this.el)?.addEventListener('click', () => this.start());
+      $$('input', this.el).forEach(i => i.addEventListener('change', () => {
+        this.config[i.id] = i.type === 'number' ? +i.value : i.value;
+        this.config.save();
+      }));
+    }
+    if (phase === 'reading') {
+      $$('.font-size-btn', this.el).forEach(btn => btn.addEventListener('click', e => {
+        this.state.fontSize = e.target.dataset.size;
+        this.render();
+      }));
+      this.startTimer();
+    }
+    if (phase === 'question') {
+      $$('.option', this.el).forEach(o => o.addEventListener('click', e => this.answer(+e.target.dataset.idx)));
+    }
+    if (phase === 'results') {
+      $('#restart', this.el)?.addEventListener('click', () => {
+        this.state = { phase: 'settings', data: null, qIndex: 0, score: 0, currentDisplayTime: 0, fontSize: 'medium' };
+        this.render();
+      });
+    }
+  }
+
+  async start() {
+    const btn = $('#start', this.el);
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    try {
+      this.state.data = await API.generate(this.config.apiKey, this.config.numQuestions);
+      this.state.currentDisplayTime = this.config.displayTime;
+      this.state.phase = 'reading';
+      this.render();
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '▶ Start Test';
+    }
+  }
+
+  startTimer() {
+    const timer = $('#timer', this.el);
+    const countdown = $('#countdown', this.el);
+    const duration = this.state.currentDisplayTime;
+    const startTime = Date.now();
+    
+    timer.style.width = '100%';
+    requestAnimationFrame(() => {
+      timer.style.transitionDuration = duration + 'ms';
+      timer.style.width = '0%';
+    });
+    
+    const updateCountdown = () => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, duration - elapsed);
+      const seconds = (remaining / 1000).toFixed(1);
+      if (countdown) countdown.textContent = `${seconds}s`;
+      
+      if (remaining > 0) {
+        requestAnimationFrame(updateCountdown);
+      }
+    };
+    updateCountdown();
+    
+    setTimeout(() => {
+      this.state.phase = 'question';
+      this.render();
+    }, duration);
+  }
+
+  answer(idx) {
+    const q = this.state.data.questions[this.state.qIndex];
+    const opts = $$('.option', this.el);
+    opts.forEach(o => o.style.pointerEvents = 'none');
+    opts[q.ans].classList.add('correct');
+    if (idx === q.ans) this.state.score++;
+    else opts[idx].classList.add('wrong');
+
+    setTimeout(() => {
+      this.state.qIndex++;
+      this.state.phase = this.state.qIndex < this.state.data.questions.length ? 'question' : 'results';
+      this.render();
+    }, 1200);
+  }
+}
+
+new App($('#app'));
+</script>
+</body>
+</html>
