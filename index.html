@@ -60,7 +60,7 @@ class Config {
 
 class API {
   static URL = 'https://openrouter.ai/api/v1/chat/completions';
-  static MODEL = 'google/gemini-2.5-flash';
+  static MODEL = 'google/gemini-3-flash-preview';
   
   static PROMPT = (n, basePremises, premisesIncrement) => `Generate a confusing on-call/message-taker medical instruction document.
 
@@ -68,7 +68,7 @@ STYLE REQUIREMENTS:
 
 MOST IMPORTANT: DON'T MAKE THE INSTRUCTIONS LONGER THAN 40-50 WORDS
 
-- Aggressive abbreviation (Pt=patient, o/c=on call, ers=emergencies, rx=prescription, msg=message, tk=take, N/R=no response, inpts=inpatients, ofc=office)
+- Aggressive abbreviation (Pt=patient, o/c=on call, ers=emergencies, rx=prescription, msg=message, tk=take, N/R=no response, inpts=inpatients, ofc=office, ccx = patch/relay to, )
 - Telegraphic fragments: omit articles, verbs, connectors
 - Jargon without glossing (terms undefined)
 - Run-on conditionals compressed
@@ -77,34 +77,6 @@ MOST IMPORTANT: DON'T MAKE THE INSTRUCTIONS LONGER THAN 40-50 WORDS
 - Mix ALL CAPS warnings with regular text
 - Use bullet points inconsistently
 - Include contradictions and ambiguous referents
-
-**Lexical Level:**
-
-- Aggressive abbreviation (every multi-syllable word compressed)
-- Inconsistent abbreviation (same concept, multiple forms)
-- Jargon without glossing
-- Typos preserved across versions
-
-**Syntactic Level:**
-
-- Telegraphic fragments (articles, verbs omitted)
-- Run-on conditionals (multiple IF-THEN compressed)
-- Ambiguous referents ("all others")
-- Missing logical connectives
-
-**Structural Level:**
-
-- Flat hierarchy (no nesting of subordinate rules)
-- Non-sequential logic (exceptions before rules)
-- Visual encoding of semantics (color = actionable)
-- Metadata contamination (timestamps mixed with instructions)
-
-**Cognitive Level:**
-
-- Assumes tacit knowledge (undefined terms)
-- Requires holding 3-5 branches in working memory
-- No decision aids (checklists, flowcharts)
-- High error surface area
 
 ### WHY It's Confusing:
 
@@ -118,13 +90,6 @@ The instructions **maximize entropy** across all dimensions simultaneously:
 Reader must resolve ambiguity at every level before acting, under time pressure, with patient safety at stake.
 
 ### The Guideline Pattern (What Makes It "This Way"):
-
-**"Minimal-Effort Encoding, Maximum-Effort Decoding"**
-
-Each author optimizes their local task (quickly noting procedure) at expense of global system (all readers × all time × all calls). Classic tragedy of the commons in documentation.
-
-
-
 
 EXAMPLE STYLE:
 "On-Call Instructions for 8866 as of 01-14-2026 15:31 KAH
@@ -163,9 +128,11 @@ RETURN VALID JSON ONLY (no markdown, no backticks):
 {
   "script": "HTML string with <span class='highlight' style='background:COLOR'>text</span> for important sections. Use colors: #ffd700 for headers, #ff9999 for warnings, #99ff99 for procedures, #99ccff for exceptions",
   "questions": [
-    {"q": "Tricky question requiring careful reading", "opts": ["plausible wrong", "correct answer", "plausible wrong", "plausible wrong"], "ans": 1}
+    {"q": "Tricky question requiring careful reading", "opts": ["plausible wrong", "correct answer", "plausible wrong", "plausible wrong"], "ans": 1, "premises": ["exact fact from script needed", "another exact fact needed", "third fact needed"]}
   ]
 }
+
+CRITICAL: Each question's "premises" array MUST contain the exact number of distinct facts from the script required to answer that question. Question 1 needs exactly ${basePremises} premises, Question 2 needs exactly ${basePremises + premisesIncrement}, and so on. Each premise must be a specific, quotable fact from the generated script.
 
 Generate EXACTLY ${n} questions. Make options VERY similar and tricky - they should require precise understanding of the confusing text. Questions should test: abbreviation meanings, conditional logic, exceptions, procedures, and contradictions within the text.
 
@@ -241,9 +208,10 @@ class App {
 
   questionView() {
     const q = this.state.data.questions[this.state.qIndex];
+    const expectedPremises = this.config.numPremises + (this.state.qIndex * this.config.premisesIncrement);
     return `
       <div class="question-container">
-        <p class="info">Question ${this.state.qIndex + 1} of ${this.state.data.questions.length} | Time: ${this.state.currentDisplayTime}ms</p>
+        <p class="info">Question ${this.state.qIndex + 1} of ${this.state.data.questions.length} | Premises: ${expectedPremises} | Time: ${this.state.currentDisplayTime}ms</p>
         <h3>${q.q}</h3>
         <div class="options">${q.opts.map((o, i) => `<div class="option" data-idx="${i}">${o}</div>`).join('')}</div>
       </div>`;
@@ -339,6 +307,11 @@ class App {
     opts[q.ans].classList.add('correct');
     if (idx === q.ans) this.state.score++;
     else opts[idx].classList.add('wrong');
+
+    if (q.premises?.length) {
+      const container = $('.question-container', this.el);
+      container.insertAdjacentHTML('beforeend', `<p class="info" style="margin-top:15px"><strong>Required premises:</strong> ${q.premises.join(' • ')}</p>`);
+    }
 
     setTimeout(() => {
       this.state.qIndex++;
